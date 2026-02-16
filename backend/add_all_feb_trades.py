@@ -1,0 +1,160 @@
+﻿import requests
+import json
+
+print("=== ADDING FEBRUARY TRADES ===\n")
+
+# Define trades for February
+trades = [
+    # Feb 3 - Winning day
+    {
+        "symbol": "EURUSD",
+        "direction": "long",
+        "entry_price": 1.0500,
+        "exit_price": 1.0650,
+        "lot_size": 0.2,
+        "entry_time": "2026-02-03T10:30:00",
+        "exit_time": "2026-02-03T15:45:00"
+    },
+    # Feb 4 - Losing day
+    {
+        "symbol": "GBPUSD",
+        "direction": "short",
+        "entry_price": 1.2400,
+        "exit_price": 1.2450,
+        "lot_size": 0.15,
+        "entry_time": "2026-02-04T09:15:00",
+        "exit_time": "2026-02-04T11:30:00"
+    },
+    # Feb 5 - Winning day
+    {
+        "symbol": "USDJPY",
+        "direction": "long",
+        "entry_price": 150.50,
+        "exit_price": 152.00,
+        "lot_size": 0.25,
+        "entry_time": "2026-02-05T13:20:00",
+        "exit_time": "2026-02-05T16:45:00"
+    },
+    # Feb 6 - Winning day
+    {
+        "symbol": "AUDUSD",
+        "direction": "long",
+        "entry_price": 0.6450,
+        "exit_price": 0.6520,
+        "lot_size": 0.2,
+        "entry_time": "2026-02-06T10:00:00",
+        "exit_time": "2026-02-06T14:30:00"
+    },
+    # Feb 7 - Small loss
+    {
+        "symbol": "USDCAD",
+        "direction": "short",
+        "entry_price": 1.3500,
+        "exit_price": 1.3510,
+        "lot_size": 0.3,
+        "entry_time": "2026-02-07T11:00:00",
+        "exit_time": "2026-02-07T13:15:00"
+    },
+    # Feb 10 - Big winning day
+    {
+        "symbol": "EURUSD",
+        "direction": "long",
+        "entry_price": 1.0520,
+        "exit_price": 1.0700,
+        "lot_size": 0.4,
+        "entry_time": "2026-02-10T13:20:00",
+        "exit_time": "2026-02-10T16:45:00"
+    },
+    {
+        "symbol": "GBPUSD",
+        "direction": "long",
+        "entry_price": 1.2420,
+        "exit_price": 1.2600,
+        "lot_size": 0.35,
+        "entry_time": "2026-02-10T10:00:00",
+        "exit_time": "2026-02-10T12:30:00"
+    },
+    # Feb 11 - Overtrading day
+    {
+        "symbol": "EURUSD",
+        "direction": "long",
+        "entry_price": 1.0530,
+        "exit_price": 1.0535,
+        "lot_size": 0.1,
+        "entry_time": "2026-02-11T09:30:00",
+        "exit_time": "2026-02-11T10:15:00"
+    },
+    {
+        "symbol": "EURUSD",
+        "direction": "short",
+        "entry_price": 1.0535,
+        "exit_price": 1.0530,
+        "lot_size": 0.1,
+        "entry_time": "2026-02-11T10:30:00",
+        "exit_time": "2026-02-11T11:15:00"
+    },
+    {
+        "symbol": "GBPUSD",
+        "direction": "short",
+        "entry_price": 1.2480,
+        "exit_price": 1.2475,
+        "lot_size": 0.1,
+        "entry_time": "2026-02-11T13:00:00",
+        "exit_time": "2026-02-11T13:45:00"
+    },
+    # Feb 12 - Winning day
+    {
+        "symbol": "USDJPY",
+        "direction": "long",
+        "entry_price": 151.00,
+        "exit_price": 152.00,
+        "lot_size": 0.2,
+        "entry_time": "2026-02-12T14:00:00",
+        "exit_time": "2026-02-12T16:30:00"
+    },
+    # Feb 13 - Losing day
+    {
+        "symbol": "USDCAD",
+        "direction": "long",
+        "entry_price": 1.3520,
+        "exit_price": 1.3460,
+        "lot_size": 0.3,
+        "entry_time": "2026-02-13T11:00:00",
+        "exit_time": "2026-02-13T14:15:00"
+    },
+    # Feb 14 - Small profit
+    {
+        "symbol": "EURUSD",
+        "direction": "short",
+        "entry_price": 1.0550,
+        "exit_price": 1.0530,
+        "lot_size": 0.15,
+        "entry_time": "2026-02-14T09:30:00",
+        "exit_time": "2026-02-14T12:00:00"
+    }
+]
+
+print(f"Adding {len(trades)} trades...\n")
+
+success_count = 0
+for i, trade in enumerate(trades):
+    try:
+        response = requests.post('http://localhost:8000/api/v1/trades/', json=trade)
+        if response.status_code == 200:
+            print(f"✅ Added trade {i+1}: {trade['symbol']} on {trade['entry_time'][:10]}")
+            success_count += 1
+        else:
+            print(f"❌ Failed: {response.status_code}")
+            print(f"   {response.text}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+print(f"\n✅ Successfully added {success_count} out of {len(trades)} trades")
+
+if success_count > 0:
+    # Refresh calendar
+    print("\n🔄 Refreshing calendar...")
+    refresh = requests.post('http://localhost:8000/api/v1/calendar/refresh?user_id=1')
+    print(f"Calendar refresh result: {refresh.json()}")
+
+print("\n=== DONE ===")

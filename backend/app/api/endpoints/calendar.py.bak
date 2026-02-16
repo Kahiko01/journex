@@ -1,0 +1,214 @@
+﻿from fastapi import APIRouter, HTTPException, Query
+from typing import List, Dict, Any, Optional
+from datetime import datetime, timedelta
+from app.api.endpoints.trades import trades_db
+from app.services.calendar.aggregator import CalendarAggregator
+from app.services.calendar.heatmap import HeatmapService
+from app.services.calendar.metrics import CalendarMetrics
+import calendar
+
+router = APIRouter()
+aggregator = CalendarAggregator()
+heatmap = HeatmapService()
+metrics = CalendarMetrics()
+
+# In-memory storage (replace with database later)
+daily_summaries = {}
+
+@router.get("/calendar/month/{year}/{month}")
+async def get_month_calendar(year: int, month: int, user_id: int = Query(1)):
+    """Get heatmap data for a specific month"""
+    try:
+        # Filter trades for this user
+        user_trades = [t for t in trades_db if t.get('user_id') == user_id]
+        
+        # Generate daily summaries
+        month_data = {}
+        _, last_day = calendar.monthrange(year, month)
+        
+        for day in range(1, last_day + 1):
+            date = datetime(year, month, day)
+            date_str = date.strftime('%Y-%m-%d')
+            
+            # Check if we have cached summary
+            cache_key = f"{user_id}_{date_str}"
+            if cache_key in daily_summaries:
+                month_data[date_str] = daily_summaries[cache_key]
+            else:
+                # Aggregate daily data
+                summary = aggregator.aggregate_daily_summary(user_id, user_trades, date)
+                if summary:
+                    # Calculate discipline score
+                    summary['discipline_score'] = metrics.calculate_discipline_score(summary)
+                    # Check for overtrading
+                    summary['overtrading_detected'] = aggregator.detect_overtrading(
+                        [t for t in user_trades if datetime.fromisoformat(t['exit_time'].replace('Z', '+00:00')).date() == date.date()]
+                    )
+                    # Check for revenge trading
+                    summary['revenge_trading_detected'] = aggregator.detect_revenge_trading(
+                        [t for t in user_trades if datetime.fromisoformat(t['exit_time'].replace('Z', '+00:00')).date() == date.date()]
+                    )
+                    
+                    daily_summaries[cache_key] = summary
+                    month_data[date_str] = summary
+        
+        # Generate heatmap grid
+        heatmap_grid = heatmap.generate_month_heatmap(year, month, month_data)
+        
+        return {
+            'year': year,
+            'month': month,
+            'month_name': calendar.month_name[month],
+            'heatmap': heatmap_grid,
+            'has_data': bool(month_data)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/calendar/year/{year}")
+async def get_year_heatmap(year: int, user_id: int = Query(1)):
+    """Get GitHub-style year heatmap"""
+    try:
+        user_trades = [t for t in trades_db if t.get('user_id') == user_id]
+        year_data = {}
+        
+        for month in range(1, 13):
+            _, last_day = calendar.monthrange(year, month)
+            for day in range(1, last_day + 1):
+                date = datetime(year, month, day)
+                date_str = date.strftime('%Y-%m-%d')
+                cache_key = f"{user_id}_{date_str}"
+                
+                if cache_key in daily_summaries:
+                    year_data[date_str] = daily_summaries[cache_key]
+                else:
+                    summary = aggregator.aggregate_daily_summary(user_id, user_trades, date)
+                    if summary:
+                        year_data[date_str] = summary
+        
+        heatmap_data = heatmap.generate_year_heatmap(year, year_data)
+        
+        return {
+            'year': year,
+            'heatmap': heatmap_data,
+            'total_trading_days': len(year_data)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/calendar/day/{date}")
+async def get_day_details(date: str, user_id: int = Query(1)):
+    """Get detailed breakdown for a specific day"""
+    try:
+        user_trades = [t for t in trades_db if t.get('user_id') == user_id]
+        target_date = datetime.fromisoformat(date)
+        
+        # Get day summary
+        cache_key = f"{user_id}_{date}"
+        if cache_key in daily_summaries:
+            summary = daily_summaries[cache_key]
+        else:
+            summary = aggregator.aggregate_daily_summary(user_id, user_trades, target_date)
+        
+        if not summary:
+            return {'message': 'No trades on this day', 'date': date}
+        
+        # Get detailed trades for the day
+        day_trades = []
+        for trade in user_trades:
+            if trade.get('exit_time'):
+                trade_date = datetime.fromisoformat(trade['exit_time'].replace('Z', '+00:00')).date()
+                if trade_date == target_date.date():
+                    # Calculate P/L if not already done
+                    if trade['direction'] == 'long':
+                        pl = (trade['exit_price'] - trade['entry_price']) * trade['lot_size']
+                    else:
+                        pl = (trade['entry_price'] - trade['exit_price']) * trade['lot_size']
+                    
+                    day_trades.append({
+                        'id': trade['id'],
+                        'symbol': trade['symbol'],
+                        'direction': trade['direction'],
+                        'entry_price': trade['entry_price'],
+                        'exit_price': trade['exit_price'],
+                        'lot_size': trade['lot_size'],
+                        'profit_loss': pl,
+                        'entry_time': trade['entry_time'],
+                        'exit_time': trade['exit_time'],
+                        'strategy': trade.get('strategy'),
+                        'emotion': trade.get('emotion'),
+                        'rating': trade.get('rating'),
+                        'mistakes': trade.get('mistakes', []),
+                        'r_multiple': trade.get('r_multiple')
+                    })
+        
+        # Get tooltip data
+        tooltip = heatmap.get_tooltip_data(summary)
+        
+        return {
+            'date': date,
+            'summary': summary,
+            'trades': day_trades,
+            'tooltip': tooltip
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/calendar/week")
+async def get_week_summary(year: int = Query(...), week: int = Query(...), user_id: int = Query(1)):
+    """Get weekly summary"""
+    try:
+        # Calculate week start and end dates
+        week_start = datetime.fromisocalendar(year, week, 1)
+        week_end = week_start + timedelta(days=6)
+        
+        week_data = []
+        current = week_start
+        while current <= week_end:
+            date_str = current.strftime('%Y-%m-%d')
+            cache_key = f"{user_id}_{date_str}"
+            
+            if cache_key in daily_summaries:
+                week_data.append(daily_summaries[cache_key])
+            
+            current += timedelta(days=1)
+        
+        weekly_summary = metrics.calculate_weekly_summary(week_data)
+        
+        return {
+            'year': year,
+            'week': week,
+            'summary': weekly_summary,
+            'days': week_data
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/calendar/refresh")
+async def refresh_daily_summaries(user_id: int = Query(1)):
+    """Force refresh of daily summaries"""
+    try:
+        user_trades = [t for t in trades_db if t.get('user_id') == user_id]
+        
+        # Clear cache for this user
+        keys_to_delete = [k for k in daily_summaries.keys() if k.startswith(f"{user_id}_")]
+        for key in keys_to_delete:
+            del daily_summaries[key]
+        
+        # Regenerate summaries
+        dates = set()
+        for trade in user_trades:
+            if trade.get('exit_time'):
+                date = datetime.fromisoformat(trade['exit_time'].replace('Z', '+00:00')).date()
+                dates.add(date)
+        
+        for date in dates:
+            date_str = date.strftime('%Y-%m-%d')
+            cache_key = f"{user_id}_{date_str}"
+            summary = aggregator.aggregate_daily_summary(user_id, user_trades, datetime.combine(date, datetime.min.time()))
+            if summary:
+                daily_summaries[cache_key] = summary
+        
+        return {'message': 'Daily summaries refreshed', 'days_updated': len(dates)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

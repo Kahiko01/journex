@@ -1,0 +1,6 @@
+﻿{
+    "symbol": "EURUSD",
+    "direction": "long",
+    "entry_price": 1.05,
+    "lot_size": 0.1
+}
