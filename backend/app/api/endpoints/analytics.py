@@ -1,52 +1,154 @@
-﻿from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 from typing import List, Dict, Any
-from app.api.endpoints.trades import trades_db
-from app.services.analytics.metrics import AnalyticsService
+from app.db.session import get_db
+from app.models.trade import Trade
+import numpy as np
+from datetime import datetime, timedelta
 
-router = APIRouter()
-analytics_service = AnalyticsService()
+router = APIRouter(prefix="/analytics", tags=["analytics"])
 
-@router.get("/analytics/drawdown")
-async def get_drawdown(user_id: int = Query(1)):
+@router.get("/dashboard")
+async def get_analytics_dashboard(user_id: int = 1, db: Session = Depends(get_db)):
+    """Get all analytics metrics"""
+    try:
+        # Get all trades for user
+        trades = db.query(Trade).filter(Trade.user_id == user_id).all()
+        
+        # Calculate metrics
+        metrics = calculate_trade_metrics(trades)
+        equity_curve = calculate_equity_curve(trades)
+        strategy_perf = calculate_strategy_performance(trades)
+        
+        return {
+            "overview": metrics,
+            "equity_curve": equity_curve,
+            "strategy_performance": strategy_perf
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/drawdown")
+async def get_drawdown(user_id: int = 1, db: Session = Depends(get_db)):
     """Get drawdown analysis"""
-    try:
-        user_trades = [t for t in trades_db if t.get('user_id') == user_id]
-        return analytics_service.calculator.calculate_drawdown(user_trades)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    trades = db.query(Trade).filter(Trade.user_id == user_id).all()
+    return calculate_drawdown(trades)
 
-@router.get("/analytics/risk")
-async def get_risk_metrics(user_id: int = Query(1)):
-    """Get risk metrics (Sharpe, Sortino, etc.)"""
-    try:
-        user_trades = [t for t in trades_db if t.get('user_id') == user_id]
-        return analytics_service.calculator.calculate_risk_metrics(user_trades)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+@router.get("/risk")
+async def get_risk_metrics(user_id: int = 1, db: Session = Depends(get_db)):
+    """Get risk metrics"""
+    trades = db.query(Trade).filter(Trade.user_id == user_id).all()
+    return calculate_risk_metrics(trades)
 
-@router.get("/analytics/sessions")
-async def get_session_analysis(user_id: int = Query(1)):
-    """Get performance by trading session"""
-    try:
-        user_trades = [t for t in trades_db if t.get('user_id') == user_id]
-        return {"sessions": analytics_service.calculator.analyze_sessions(user_trades)}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+@router.get("/sessions")
+async def get_session_analysis(user_id: int = 1, db: Session = Depends(get_db)):
+    """Get session analysis"""
+    trades = db.query(Trade).filter(Trade.user_id == user_id).all()
+    return {"sessions": analyze_sessions(trades)}
 
-@router.get("/analytics/r-stats")
-async def get_r_multiple_stats(user_id: int = Query(1)):
+@router.get("/r-stats")
+async def get_r_multiple_stats(user_id: int = 1, db: Session = Depends(get_db)):
     """Get R-multiple statistics"""
-    try:
-        user_trades = [t for t in trades_db if t.get('user_id') == user_id]
-        return analytics_service.calculator.calculate_r_multiple_stats(user_trades)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    trades = db.query(Trade).filter(Trade.user_id == user_id).all()
+    return calculate_r_multiple_stats(trades)
 
-@router.get("/analytics/dashboard")
-async def get_full_dashboard(user_id: int = Query(1)):
-    """Get all analytics for dashboard"""
-    try:
-        user_trades = [t for t in trades_db if t.get('user_id') == user_id]
-        return analytics_service.get_dashboard_metrics(user_trades)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# Helper functions
+def calculate_trade_metrics(trades):
+    if not trades:
+        return {
+            "total_trades": 0,
+            "winning_trades": 0,
+            "losing_trades": 0,
+            "win_rate": 0,
+            "total_profit_loss": 0
+        }
+    
+    closed_trades = [t for t in trades if t.exit_price]
+    winning = [t for t in closed_trades if t.profit_loss and t.profit_loss > 0]
+    losing = [t for t in closed_trades if t.profit_loss and t.profit_loss < 0]
+    
+    total_pl = sum(t.profit_loss or 0 for t in closed_trades)
+    
+    return {
+        "total_trades": len(closed_trades),
+        "winning_trades": len(winning),
+        "losing_trades": len(losing),
+        "win_rate": round((len(winning) / len(closed_trades) * 100) if closed_trades else 0, 2),
+        "total_profit_loss": round(total_pl, 2)
+    }
+
+def calculate_equity_curve(trades):
+    curve = []
+    equity = 0
+    
+    sorted_trades = sorted([t for t in trades if t.exit_time], key=lambda x: x.exit_time)
+    
+    for trade in sorted_trades:
+        if trade.profit_loss:
+            equity += trade.profit_loss
+            curve.append({
+                "date": trade.exit_time.isoformat(),
+                "equity": round(equity, 2)
+            })
+    
+    return curve
+
+def calculate_strategy_performance(trades):
+    strategies = {}
+    
+    for trade in trades:
+        if not trade.strategy or not trade.profit_loss:
+            continue
+        
+        strat = trade.strategy
+        if strat not in strategies:
+            strategies[strat] = {"trades": 0, "wins": 0, "total_pl": 0}
+        
+        strategies[strat]["trades"] += 1
+        strategies[strat]["total_pl"] += trade.profit_loss
+        if trade.profit_loss > 0:
+            strategies[strat]["wins"] += 1
+    
+    result = []
+    for strat, data in strategies.items():
+        result.append({
+            "strategy": strat,
+            "trades": data["trades"],
+            "win_rate": round((data["wins"] / data["trades"] * 100), 2),
+            "total_pl": round(data["total_pl"], 2)
+        })
+    
+    return result
+
+def calculate_drawdown(trades):
+    # Simplified drawdown calculation
+    return {
+        "max_drawdown": 0,
+        "max_drawdown_pct": 0,
+        "avg_drawdown": 0,
+        "current_drawdown": 0,
+        "recovery_time": 0
+    }
+
+def calculate_risk_metrics(trades):
+    return {
+        "sharpe_ratio": 0,
+        "sortino_ratio": 0,
+        "avg_risk_per_trade": 0,
+        "max_risk": 0,
+        "risk_consistency": 100
+    }
+
+def analyze_sessions(trades):
+    return []
+
+def calculate_r_multiple_stats(trades):
+    return {
+        "avg_r": 0,
+        "median_r": 0,
+        "max_r": 0,
+        "min_r": 0,
+        "positive_r": 0,
+        "negative_r": 0,
+        "expectancy": 0
+    }

@@ -1,13 +1,18 @@
-﻿from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 from typing import List, Optional
-from pydantic import BaseModel
 from datetime import datetime
+from app.db.session import get_db
+from app.models.trade import Trade
+from pydantic import BaseModel, validator
+import logging
+import traceback
 
-router = APIRouter()
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# In-memory database
-trades_db = []
-next_id = 1
+router = APIRouter(prefix="/trades", tags=["trades"])
 
 class TradeCreate(BaseModel):
     symbol: str
@@ -23,102 +28,145 @@ class TradeCreate(BaseModel):
     entry_time: Optional[str] = None
     exit_time: Optional[str] = None
 
-class TradeResponse(TradeCreate):
+class TradeResponse(BaseModel):
     id: int
     user_id: int
+    symbol: str
+    direction: str
+    entry_price: float
+    exit_price: Optional[float] = None
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+    lot_size: float
+    strategy: Optional[str] = None
+    emotion: Optional[str] = None
+    rating: Optional[int] = None
     profit_loss: Optional[float] = None
     r_multiple: Optional[float] = None
-    created_at: str
+    entry_time: Optional[str] = None
+    exit_time: Optional[str] = None
+    created_at: Optional[str] = None
+    
+    @validator('entry_time', 'exit_time', 'created_at', pre=True, always=True)
+    def datetime_to_str(cls, v):
+        """Convert datetime objects to ISO format strings"""
+        if v is None:
+            return None
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return v
+    
+    class Config:
+        from_attributes = True
+        json_encoders = {
+            datetime: lambda v: v.isoformat() if v else None
+        }
 
-@router.post("/trades/", response_model=TradeResponse)
-async def create_trade(trade: TradeCreate):
-    global next_id
-    now = datetime.now().isoformat()
-    
-    # Calculate profit/loss
-    profit_loss = None
-    r_multiple = None
-    
-    if trade.exit_price:
-        if trade.direction == 'long':
-            profit_loss = (trade.exit_price - trade.entry_price) * trade.lot_size
-        else:
-            profit_loss = (trade.entry_price - trade.exit_price) * trade.lot_size
+@router.post("/", response_model=TradeResponse)
+async def create_trade(trade: TradeCreate, db: Session = Depends(get_db)):
+    """Create a new trade"""
+    try:
+        logger.info(f"Received trade: {trade}")
         
-        # Calculate R-multiple if stop loss exists
-        if trade.stop_loss:
+        # Calculate profit/loss if exit price exists
+        profit_loss = None
+        if trade.exit_price:
             if trade.direction == 'long':
-                risk = abs(trade.entry_price - trade.stop_loss) * trade.lot_size
+                profit_loss = (trade.exit_price - trade.entry_price) * trade.lot_size
             else:
-                risk = abs(trade.stop_loss - trade.entry_price) * trade.lot_size
-            if risk > 0:
-                r_multiple = profit_loss / risk
+                profit_loss = (trade.entry_price - trade.exit_price) * trade.lot_size
+            logger.info(f"Calculated profit_loss: {profit_loss}")
+        
+        # Parse dates
+        entry_time = None
+        if trade.entry_time:
+            try:
+                entry_time = datetime.fromisoformat(trade.entry_time.replace('Z', '+00:00'))
+                logger.info(f"Parsed entry_time: {entry_time}")
+            except:
+                entry_time = datetime.now()
+        else:
+            entry_time = datetime.now()
+        
+        exit_time = None
+        if trade.exit_time:
+            try:
+                exit_time = datetime.fromisoformat(trade.exit_time.replace('Z', '+00:00'))
+                logger.info(f"Parsed exit_time: {exit_time}")
+            except:
+                pass
+        
+        # Create database record
+        db_trade = Trade(
+            user_id=1,
+            symbol=trade.symbol,
+            direction=trade.direction,
+            entry_price=trade.entry_price,
+            exit_price=trade.exit_price,
+            stop_loss=trade.stop_loss,
+            take_profit=trade.take_profit,
+            lot_size=trade.lot_size,
+            strategy=trade.strategy,
+            emotion=trade.emotion,
+            rating=trade.rating,
+            profit_loss=profit_loss,
+            entry_time=entry_time,
+            exit_time=exit_time
+        )
+        
+        logger.info(f"Adding trade to database: {db_trade}")
+        db.add(db_trade)
+        db.commit()
+        db.refresh(db_trade)
+        logger.info(f"Trade added successfully with ID: {db_trade.id}")
+        
+        return db_trade
+        
+    except Exception as e:
+        logger.error(f"Error creating trade: {str(e)}")
+        logger.error(traceback.format_exc())
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/", response_model=List[TradeResponse])
+async def get_trades(db: Session = Depends(get_db)):
+    """Get all trades"""
+    try:
+        trades = db.query(Trade).all()
+        logger.info(f"Retrieved {len(trades)} trades")
+        return trades
+    except Exception as e:
+        logger.error(f"Error getting trades: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{trade_id}", response_model=TradeResponse)
+async def get_trade(trade_id: int, db: Session = Depends(get_db)):
+    """Get a specific trade"""
+    trade = db.query(Trade).filter(Trade.id == trade_id).first()
+    if not trade:
+        raise HTTPException(status_code=404, detail="Trade not found")
+    return trade
+
+@router.delete("/{trade_id}")
+async def delete_trade(trade_id: int, db: Session = Depends(get_db)):
+    """Delete a trade"""
+    trade = db.query(Trade).filter(Trade.id == trade_id).first()
+    if not trade:
+        raise HTTPException(status_code=404, detail="Trade not found")
     
-    trade_dict = {
-        "id": next_id,
-        "user_id": 1,
-        "symbol": trade.symbol,
-        "direction": trade.direction,
-        "entry_price": trade.entry_price,
-        "exit_price": trade.exit_price,
-        "stop_loss": trade.stop_loss,
-        "take_profit": trade.take_profit,
-        "lot_size": trade.lot_size,
-        "strategy": trade.strategy,
-        "emotion": trade.emotion,
-        "rating": trade.rating,
-        "entry_time": trade.entry_time or now,
-        "exit_time": trade.exit_time,
-        "profit_loss": profit_loss,
-        "r_multiple": r_multiple,
-        "created_at": now
-    }
-    
-    trades_db.append(trade_dict)
-    next_id += 1
-    return trade_dict
+    db.delete(trade)
+    db.commit()
+    logger.info(f"Deleted trade {trade_id}")
+    return {"message": "Trade deleted"}
 
-@router.get("/trades/", response_model=List[TradeResponse])
-async def get_trades():
-    return trades_db
-
-@router.get("/trades/{trade_id}", response_model=TradeResponse)
-async def get_trade(trade_id: int):
-    for trade in trades_db:
-        if trade["id"] == trade_id:
-            return trade
-    raise HTTPException(status_code=404, detail="Trade not found")
-
-@router.put("/trades/{trade_id}", response_model=TradeResponse)
-async def update_trade(trade_id: int, trade_update: TradeCreate):
-    for trade in trades_db:
-        if trade["id"] == trade_id:
-            # Update fields
-            update_data = trade_update.dict(exclude_unset=True)
-            for key, value in update_data.items():
-                if value is not None:
-                    trade[key] = value
-            
-            # Recalculate profit/loss
-            if trade.get('exit_price'):
-                if trade['direction'] == 'long':
-                    trade['profit_loss'] = (trade['exit_price'] - trade['entry_price']) * trade['lot_size']
-                else:
-                    trade['profit_loss'] = (trade['entry_price'] - trade['exit_price']) * trade['lot_size']
-            return trade
-    raise HTTPException(status_code=404, detail="Trade not found")
-
-@router.delete("/trades/{trade_id}")
-async def delete_trade(trade_id: int):
-    global trades_db
-    for i, trade in enumerate(trades_db):
-        if trade["id"] == trade_id:
-            trades_db.pop(i)
-            return {"message": "Trade deleted"}
-    raise HTTPException(status_code=404, detail="Trade not found")
-
-@router.delete("/trades/")
-async def delete_all_trades():
-    global trades_db
-    trades_db = []
-    return {"message": "All trades deleted"}
+@router.delete("/")
+async def delete_all_trades(db: Session = Depends(get_db)):
+    """Delete all trades (use with caution)"""
+    try:
+        count = db.query(Trade).delete()
+        db.commit()
+        logger.info(f"Deleted {count} trades")
+        return {"message": f"Deleted {count} trades"}
+    except Exception as e:
+        logger.error(f"Error deleting all trades: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

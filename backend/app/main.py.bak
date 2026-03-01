@@ -4,21 +4,16 @@ import os
 from dotenv import load_dotenv
 
 # Import routers
-from app.api.endpoints import trading_plan
 from app.api.endpoints import trades
-from app.api.endpoints import checklist
 from app.api.endpoints import analytics
 from app.api.endpoints import calendar
 from app.api.endpoints.university import courses
 from app.api.endpoints.university import cohort
 from app.api.endpoints.university import certification
 from app.api.endpoints import advanced_analytics
-from app.api.endpoints import balance
-from app.api.endpoints import economic_calendar
 
 load_dotenv()
 
-# Create FastAPI app FIRST
 app = FastAPI(
     title="Journex",
     description="Trading Journal Platform",
@@ -34,18 +29,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers - AFTER app is defined
-app.include_router(checklist.router, prefix="/api/v1")
+# Include routers
 app.include_router(trades.router, prefix="/api/v1", tags=["trades"])
 app.include_router(analytics.router, prefix="/api/v1", tags=["analytics"])
-app.include_router(trading_plan.router, prefix="/api/v1")
 app.include_router(calendar.router, prefix="/api/v1", tags=["calendar"])
 app.include_router(courses.router, prefix="/api/v1")
 app.include_router(cohort.router, prefix="/api/v1")
 app.include_router(certification.router, prefix="/api/v1")
 app.include_router(advanced_analytics.router, prefix="/api/v1")
-app.include_router(balance.router, prefix="/api/v1")
-app.include_router(economic_calendar.router, prefix="/api/v1")
 
 @app.get("/")
 async def root():
