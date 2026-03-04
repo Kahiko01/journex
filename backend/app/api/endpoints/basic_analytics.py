@@ -152,3 +152,55 @@ def calculate_r_multiple_stats(trades):
         "negative_r": 0,
         "expectancy": 0
     }
+"""
+Analytics endpoints
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from typing import Optional
+import logging
+
+from app.db.session import get_db
+from app.models.trade import Trade
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/analytics", tags=["analytics"])
+
+@router.get("/summary")
+async def get_analytics_summary(
+    user_id: int = Query(1),
+    db: Session = Depends(get_db)
+):
+    """Get basic analytics summary"""
+    try:
+        trades = db.query(Trade).filter(Trade.user_id == user_id).all()
+        
+        if not trades:
+            return {
+                "total_pl": 0,
+                "win_rate": 0,
+                "total_trades": 0,
+                "profit_factor": 0
+            }
+        
+        winning_trades = [t for t in trades if t.profit_loss and t.profit_loss > 0]
+        losing_trades = [t for t in trades if t.profit_loss and t.profit_loss < 0]
+        
+        total_pl = sum(t.profit_loss or 0 for t in trades)
+        win_rate = len(winning_trades) / len(trades) * 100 if trades else 0
+        
+        gross_profit = sum(t.profit_loss for t in winning_trades)
+        gross_loss = abs(sum(t.profit_loss for t in losing_trades))
+        profit_factor = gross_profit / gross_loss if gross_loss > 0 else gross_profit
+        
+        return {
+            "total_pl": round(total_pl, 2),
+            "win_rate": round(win_rate, 2),
+            "total_trades": len(trades),
+            "profit_factor": round(profit_factor, 2)
+        }
+    except Exception as e:
+        logger.error(f"Error getting analytics summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

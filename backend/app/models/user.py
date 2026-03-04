@@ -10,7 +10,6 @@ from app.db.session import Base
 class User(Base):
     __tablename__ = "users"
     
-    # Primary fields
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(100), unique=True, index=True, nullable=False)
     username = Column(String(50), unique=True, index=True, nullable=False)
@@ -38,7 +37,12 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Settings and preferences
-    theme_preference = Column(String(20), default="dark")  # dark, light, cyberpunk
+    theme_preference = Column(String(20), default="dark")  # dark, light, cyberpunk, high-contrast
+    accent_color = Column(String(20), default="cyan")  # cyan, purple, blue, green, rose, amber
+    font_size = Column(String(20), default="normal")  # small, normal, large
+    animations_enabled = Column(Boolean, default=True)
+    compact_mode = Column(Boolean, default=False)
+    
     email_notifications = Column(Boolean, default=True)
     push_notifications = Column(Boolean, default=True)
     daily_report = Column(Boolean, default=False)

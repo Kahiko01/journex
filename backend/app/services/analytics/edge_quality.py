@@ -4,6 +4,50 @@ Measures the quality and consistency of trading edge
 """
 
 import numpy as np
+
+def convert_numpy(obj):
+    """Convert numpy types to native Python types"""
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, dict):
+        return {key: convert_numpy(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(convert_numpy(item) for item in obj)
+    elif hasattr(obj, 'item'):
+        return obj.item()
+    else:
+        return obj
+import numpy as np
+
+def convert_numpy(obj):
+    """Convert numpy types to native Python types"""
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, dict):
+        return {key: convert_numpy(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(convert_numpy(item) for item in obj)
+    elif hasattr(obj, 'item'):
+        return obj.item()
+    else:
+        return obj
+import numpy as np
 from typing import List, Dict, Any, Tuple
 from datetime import datetime, timedelta
 from scipy import stats
@@ -286,3 +330,39 @@ class EdgeQualityService:
             "sample_size_warning": True,
             "reliability_score": 0
         }
+def analyze_edge_quality(self, trades: List[Dict]) -> Dict[str, Any]:
+    """Comprehensive edge quality analysis"""
+    if not trades:
+        return convert_numpy(self._empty_response())
+    
+    # ... your existing code ...
+    
+    result = {
+        "core_metrics": core_metrics,
+        "distribution": distribution,
+        "rolling_analysis": rolling_analysis,
+        "statistical_significance": significance,
+        "edge_consistency": consistency,
+        "sample_size_warning": len(trades) < 30,
+        "reliability_score": self._calculate_reliability(trades)
+    }
+    
+    return convert_numpy(result)
+def analyze_edge_quality(self, trades: List[Dict]) -> Dict[str, Any]:
+    """Comprehensive edge quality analysis"""
+    if not trades:
+        return convert_numpy(self._empty_response())
+    
+    # ... your existing code ...
+    
+    result = {
+        "core_metrics": core_metrics,
+        "distribution": distribution,
+        "rolling_analysis": rolling_analysis,
+        "statistical_significance": significance,
+        "edge_consistency": consistency,
+        "sample_size_warning": len(trades) < 30,
+        "reliability_score": self._calculate_reliability(trades)
+    }
+    
+    return convert_numpy(result)

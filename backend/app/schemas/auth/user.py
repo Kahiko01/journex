@@ -81,6 +81,10 @@ class UserSettingsUpdate(BaseModel):
     
     # Display settings
     theme_preference: Optional[str] = None
+    accent_color: Optional[str] = None
+    font_size: Optional[str] = None
+    animations_enabled: Optional[bool] = None
+    compact_mode: Optional[bool] = None
     default_timeframe: Optional[str] = None
     chart_preference: Optional[str] = None
     currency_display: Optional[str] = None
@@ -104,6 +108,10 @@ class UserSettingsUpdate(BaseModel):
 # User Profile Response (extends UserResponse)
 class UserProfileResponse(UserResponse):
     theme_preference: str
+    accent_color: str
+    font_size: str
+    animations_enabled: bool
+    compact_mode: bool
     email_notifications: bool
     push_notifications: bool
     daily_report: bool

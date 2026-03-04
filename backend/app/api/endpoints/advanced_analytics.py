@@ -21,6 +21,7 @@ from app.models.trade import Trade
 from app.api.deps.auth import get_current_user_id
 
 # Import all analytics services
+from app.utils.serialization.numpy_encoder import convert_numpy_types
 from app.services.analytics.edge_quality import EdgeQualityService
 from app.services.analytics.monte_carlo import MonteCarloService
 from app.services.analytics.trade_clustering import TradeClusteringService
@@ -38,6 +39,28 @@ clustering_service = TradeClusteringService()
 stability_service = StabilityMetricsService()
 improvement_service = ImprovementTrackingService()
 
+
+def trade_to_dict(trade: Trade, fields: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Helper function to convert Trade model to dictionary with safe defaults"""
+    base_fields = {
+        'id': trade.id,
+        'profit_loss': trade.profit_loss or 0,
+        'r_multiple': trade.r_multiple or 0,
+        'symbol': trade.symbol,
+        'direction': trade.direction,
+        'entry_price': trade.entry_price,
+        'exit_price': trade.exit_price,
+        'strategy': trade.strategy,
+        'emotion': trade.emotion,
+        'entry_time': trade.entry_time.isoformat() if trade.entry_time else None,
+        'exit_time': trade.exit_time.isoformat() if trade.exit_time else None,
+    }
+    
+    if fields:
+        return {k: v for k, v in base_fields.items() if k in fields}
+    return base_fields
+
+
 # ==================== EDGE QUALITY ANALYSIS ====================
 
 @router.get("/edge-quality")
@@ -46,7 +69,7 @@ async def get_edge_quality_analysis(
     db: Session = Depends(get_db),
     current_user_id: int = Depends(get_current_user_id)
 ):
-    """Get Edge Quality Analysis"""
+    """Get Edge Quality Analysis with numpy type conversion"""
     try:
         # Build query
         query = db.query(Trade).filter(Trade.user_id == current_user_id)
@@ -67,35 +90,22 @@ async def get_edge_quality_analysis(
             }
         
         # Convert to dict for analysis
-        trade_dicts = []
-        for trade in trades:
-            trade_dict = {
-                'id': trade.id,
-                'profit_loss': trade.profit_loss or 0,
-                'r_multiple': trade.r_multiple or 0,
-                'symbol': trade.symbol,
-                'direction': trade.direction,
-                'entry_price': trade.entry_price,
-                'exit_price': trade.exit_price,
-                'strategy': trade.strategy,
-                'emotion': trade.emotion,
-                'entry_time': trade.entry_time.isoformat() if trade.entry_time else None,
-                'exit_time': trade.exit_time.isoformat() if trade.exit_time else None,
-            }
-            trade_dicts.append(trade_dict)
+        trade_dicts = [trade_to_dict(trade) for trade in trades]
         
         # Run edge quality analysis
         analysis = edge_service.analyze_edge_quality(trade_dicts)
         
+        # Convert numpy types before returning
         return {
             "status": "success",
             "total_trades": len(trades),
-            "analysis": analysis
+            "analysis": convert_numpy_types(analysis)
         }
         
     except Exception as e:
         logger.error(f"Edge quality analysis error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/edge-quality/simple")
 async def get_simple_edge_metrics(
@@ -136,6 +146,7 @@ async def get_simple_edge_metrics(
         logger.error(f"Simple edge metrics error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # ==================== MONTE CARLO SIMULATION ====================
 
 @router.get("/monte-carlo")
@@ -156,13 +167,14 @@ async def get_monte_carlo_simulation(
             }
         
         # Convert to dict
-        trade_dicts = []
-        for trade in trades:
-            trade_dicts.append({
+        trade_dicts = [
+            {
                 'profit_loss': trade.profit_loss or 0,
                 'r_multiple': trade.r_multiple or 0,
                 'exit_time': trade.exit_time.isoformat() if trade.exit_time else None
-            })
+            }
+            for trade in trades
+        ]
         
         # Run simulation
         simulation = monte_carlo_service.simulate(trade_dicts, simulations)
@@ -171,12 +183,13 @@ async def get_monte_carlo_simulation(
             "status": "success",
             "total_trades": len(trades),
             "simulations_run": simulations,
-            "simulation": simulation
+            "simulation": convert_numpy_types(simulation)
         }
         
     except Exception as e:
         logger.error(f"Monte Carlo simulation error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # ==================== TRADE CLUSTERING ====================
 
@@ -197,18 +210,7 @@ async def get_trade_clustering(
             }
         
         # Convert to dict
-        trade_dicts = []
-        for trade in trades:
-            trade_dicts.append({
-                'id': trade.id,
-                'profit_loss': trade.profit_loss or 0,
-                'r_multiple': trade.r_multiple or 0,
-                'symbol': trade.symbol,
-                'strategy': trade.strategy,
-                'emotion': trade.emotion,
-                'exit_time': trade.exit_time.isoformat() if trade.exit_time else None,
-                'entry_time': trade.entry_time.isoformat() if trade.entry_time else None,
-            })
+        trade_dicts = [trade_to_dict(trade) for trade in trades]
         
         # Run clustering analysis
         clustering = clustering_service.analyze_clusters(trade_dicts)
@@ -216,12 +218,13 @@ async def get_trade_clustering(
         return {
             "status": "success",
             "total_trades": len(trades),
-            "clustering": clustering
+            "clustering": convert_numpy_types(clustering)
         }
         
     except Exception as e:
         logger.error(f"Trade clustering error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # ==================== STABILITY METRICS ====================
 
@@ -242,14 +245,15 @@ async def get_stability_metrics(
             }
         
         # Convert to dict
-        trade_dicts = []
-        for trade in trades:
-            trade_dicts.append({
+        trade_dicts = [
+            {
                 'profit_loss': trade.profit_loss or 0,
                 'r_multiple': trade.r_multiple or 0,
                 'exit_time': trade.exit_time.isoformat() if trade.exit_time else None,
                 'entry_time': trade.entry_time.isoformat() if trade.entry_time else None,
-            })
+            }
+            for trade in trades
+        ]
         
         # Run stability analysis
         stability = stability_service.analyze_stability(trade_dicts)
@@ -257,12 +261,13 @@ async def get_stability_metrics(
         return {
             "status": "success",
             "total_trades": len(trades),
-            "stability": stability
+            "stability": convert_numpy_types(stability)
         }
         
     except Exception as e:
         logger.error(f"Stability metrics error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # ==================== IMPROVEMENT TRACKING ====================
 
@@ -283,15 +288,16 @@ async def get_improvement_tracking(
             }
         
         # Convert to dict
-        trade_dicts = []
-        for trade in trades:
-            trade_dicts.append({
+        trade_dicts = [
+            {
                 'profit_loss': trade.profit_loss or 0,
                 'r_multiple': trade.r_multiple or 0,
                 'strategy': trade.strategy,
                 'exit_time': trade.exit_time.isoformat() if trade.exit_time else None,
                 'entry_time': trade.entry_time.isoformat() if trade.entry_time else None,
-            })
+            }
+            for trade in trades
+        ]
         
         # Run improvement analysis
         improvement = improvement_service.analyze_improvement(trade_dicts)
@@ -299,12 +305,13 @@ async def get_improvement_tracking(
         return {
             "status": "success",
             "total_trades": len(trades),
-            "improvement": improvement
+            "improvement": convert_numpy_types(improvement)
         }
         
     except Exception as e:
         logger.error(f"Improvement tracking error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # ==================== CALENDAR ENDPOINT ====================
 
@@ -435,6 +442,7 @@ async def get_calendar_data(
     except Exception as e:
         logger.error(f"Calendar data error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # ==================== HEALTH CHECK ====================
 
