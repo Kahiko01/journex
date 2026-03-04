@@ -67,3 +67,7 @@ class User(Base):
     
     # Relationships
     trades = relationship("Trade", back_populates="user", cascade="all, delete-orphan")
+    
+    # Notification relationships
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
+    notification_settings = relationship("UserNotificationSettings", back_populates="user", uselist=False, cascade="all, delete-orphan")

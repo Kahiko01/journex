@@ -1,0 +1,65 @@
+{
+  "courses": [
+    {
+      "id": "4295e2ab-c7cf-4897-9435-36e0b43a8aa7",
+      "slug": "babypips-forex-school",
+      "created_at": "2026-03-04T13:35:20.097549",
+      "updated_at": "2026-03-04T13:35:20.097567",
+      "status": "published",
+      "title": "Babypips Forex School",
+      "description": "Complete forex trading education based on the famous Babypips.com school. Learn everything from basic forex concepts to advanced trading strategies.",
+      "category": "Forex",
+      "difficulty": "Beginner",
+      "duration_minutes": 1200
+    },
+    {
+      "id": "0bce84f9-906c-4ae5-bca6-108ce388b1ab",
+      "slug": "forex-trading-fundamentals",
+      "created_at": "2026-03-04T13:35:20.113023",
+      "updated_at": "2026-03-04T13:35:20.113045",
+      "status": "published",
+      "title": "Forex Trading Fundamentals",
+      "description": "Master the basics of Forex trading including currency pairs, pips, leverage, and position sizing.",
+      "category": "Forex",
+      "difficulty": "Beginner",
+      "duration_minutes": 90
+    },
+    {
+      "id": "b88ff969-2fc3-4bd8-b7f0-309f179195fe",
+      "slug": "advanced-technical-analysis",
+      "created_at": "2026-03-04T13:35:20.127880",
+      "updated_at": "2026-03-04T13:35:20.127904",
+      "status": "published",
+      "title": "Advanced Technical Analysis",
+      "description": "Learn professional chart patterns, indicators, and price action strategies used by top traders.",
+      "category": "Technical Analysis",
+      "difficulty": "Advanced",
+      "duration_minutes": 150
+    },
+    {
+      "id": "3ce375e2-3451-42b9-94c1-4004dba28144",
+      "slug": "risk-management-mastery",
+      "created_at": "2026-03-04T13:35:20.144515",
+      "updated_at": "2026-03-04T13:35:20.144558",
+      "status": "published",
+      "title": "Risk Management Mastery",
+      "description": "Essential risk management techniques to protect your capital and maximize returns.",
+      "category": "Risk Management",
+      "difficulty": "Intermediate",
+      "duration_minutes": 75
+    },
+    {
+      "id": "e2a9c3ae-1c0d-4a73-a0ef-be6f82c4a326",
+      "slug": "trading-psychology",
+      "created_at": "2026-03-04T13:35:20.161472",
+      "updated_at": "2026-03-04T13:35:20.161484",
+      "status": "published",
+      "title": "Trading Psychology",
+      "description": "Master your emotions, overcome fear and greed, and develop a winning mindset.",
+      "category": "Psychology",
+      "difficulty": "Intermediate",
+      "duration_minutes": 60
+    }
+  ],
+  "total": 5
+}

@@ -2,6 +2,7 @@
 Main application module
 """
 
+from fastapi.staticfiles import StaticFiles
 from app.api.endpoints.analytics import anonymous_dashboard
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,6 +36,8 @@ app.add_middleware(
 )
 
 # NOW import all routers AFTER app is created
+# Import notifications router
+from app.api.endpoints.notifications import notifications as notifications_router
 app.include_router(anonymous_dashboard.router, prefix="/api/v1")
 from app.api.endpoints import ai
 from app.api.endpoints import trading_plan
@@ -52,8 +55,12 @@ from app.api.endpoints.auth import auth
 from app.api.endpoints.auth import avatar
 from app.api.endpoints import fast_ai
 from app.api.endpoints.analytics.anonymous_tracking import router as anonymous_tracking_router
+# Serve static files (for PDFs, images, etc.)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Include routers
+# Include notifications router
+app.include_router(notifications_router.router, prefix="/api/v1")
 app.include_router(ai.router, prefix="/api/v1")
 app.include_router(trading_plan.router, prefix="/api/v1", tags=["trading-plan"])
 app.include_router(trades.router, prefix="/api/v1", tags=["trades"])
