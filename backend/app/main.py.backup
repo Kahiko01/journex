@@ -1,0 +1,155 @@
+"""
+Main application module - Journex Backend
+"""
+
+import os
+import logging
+from datetime import datetime
+from contextlib import asynccontextmanager
+
+from dotenv import load_dotenv
+from fastapi import FastAPI, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Load environment variables
+load_dotenv()
+
+# --- LIFESPAN MANAGEMENT ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Handle application startup and shutdown events"""
+    # Startup
+    logger.info("Starting up Journex API...")
+    yield
+    # Shutdown
+    logger.info("Shutting down Journex API...")
+
+# Initialize FastAPI app
+app = FastAPI(
+    title="Journex",
+    description="Professional Trading Journal & Analytics Platform",
+    version=os.getenv("VERSION", "1.0.0"),
+    docs_url="/docs" if os.getenv("ENVIRONMENT") != "production" else None,
+    redoc_url="/redoc" if os.getenv("ENVIRONMENT") != "production" else None,
+    lifespan=lifespan
+)
+
+# CORS configuration
+ALLOWED_ORIGINS = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000"
+).split(",")
+
+# Strip whitespace from origins
+ALLOWED_ORIGINS = [origin.strip() for origin in ALLOWED_ORIGINS]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- ROUTER IMPORTS ---
+from app.api.endpoints.university import router as university_router
+from app.api.endpoints.university.cohort import cohort
+from app.api.endpoints.notifications import notifications as notifications_router
+from app.api.endpoints.analytics import anonymous_dashboard
+from app.api.endpoints import (
+    ai, trading_plan, trades, checklist, 
+    calendar, advanced_analytics, balance, 
+    economic_calendar, fast_ai
+)
+from app.api.endpoints.auth import auth, avatar
+from app.api.endpoints.analytics.anonymous_tracking import router as anonymous_tracking_router
+from app.api.endpoints.notifications import test_notifications
+
+# --- ROUTER REGISTRY ---
+# Centralized router configuration for better maintainability
+ROUTER_CONFIGS = [
+    # (router, prefix, tags)
+    (university_router, "/api/v1/university", ["University"]),
+    (cohort.router, "/api/v1/university/cohorts", ["Cohorts"]),
+    (anonymous_dashboard.router, "/api/v1/analytics", ["Analytics"]),
+    (anonymous_tracking_router, "/api/v1/tracking", ["Tracking"]),
+    (notifications_router.router, "/api/v1/notifications", ["Notifications"]),
+    (test_notifications.router, "/api/v1/test-notifications", ["Test Notifications"]),
+    (ai.router, "/api/v1/ai", ["AI"]),
+    (fast_ai.router, "/api/v1/fast-ai", ["Fast AI"]),
+    (trading_plan.router, "/api/v1/trading-plan", ["Trading Plan"]),
+    (trades.router, "/api/v1/trades", ["Trades"]),
+    (checklist.router, "/api/v1/checklist", ["Checklist"]),
+    (calendar.router, "/api/v1/calendar", ["Calendar"]),
+    (advanced_analytics.router, "/api/v1/advanced-analytics", ["Advanced Analytics"]),
+    (balance.router, "/api/v1/balance", ["Balance"]),
+    (economic_calendar.router, "/api/v1/economic-calendar", ["Economic Calendar"]),
+    (auth.router, "/api/v1/auth", ["Authentication"]),
+    (avatar.router, "/api/v1/avatar", ["Avatar"]),
+]
+
+# Register all routers
+for router, prefix, tags in ROUTER_CONFIGS:
+    app.include_router(router, prefix=prefix, tags=tags)
+
+# --- STATIC FILES CONFIGURATION ---
+STATIC_DIRECTORIES = ["static", "uploads"]
+
+for directory in STATIC_DIRECTORIES:
+    os.makedirs(directory, exist_ok=True)
+    # Use name that matches directory to avoid conflicts
+    app.mount(f"/{directory}", StaticFiles(directory=directory), name=directory)
+
+# --- EXCEPTION HANDLERS ---
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    """Global exception handler for unhandled exceptions"""
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "detail": "Internal server error",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    )
+
+# --- SYSTEM ENDPOINTS ---
+@app.get("/", tags=["System"], response_model=dict)
+async def root():
+    """Root endpoint returning API information"""
+    return {
+        "project": "Journex",
+        "message": "Welcome to Journex API",
+        "status": "running",
+        "version": os.getenv("VERSION", "1.0.0"),
+        "environment": os.getenv("ENVIRONMENT", "development"),
+        "docs": "/docs" if os.getenv("ENVIRONMENT") != "production" else None
+    }
+
+@app.get("/health", tags=["System"], response_model=dict)
+async def health_check():
+    """Health check endpoint for monitoring"""
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "environment": os.getenv("ENVIRONMENT", "development"),
+        "version": os.getenv("VERSION", "1.0.0")
+    }
+
+@app.get("/ready", tags=["System"], response_model=dict)
+async def readiness_check():
+    """Readiness probe for Kubernetes/Docker orchestration"""
+    # Add actual dependency checks here (DB, Redis, etc.)
+    return {
+        "ready": True,
+        "timestamp": datetime.utcnow().isoformat()
+    }

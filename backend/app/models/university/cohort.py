@@ -1,132 +1,106 @@
-﻿from sqlalchemy import Column, String, Text, Integer, Boolean, Float, ForeignKey, DateTime, JSON, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.ext.declarative import declarative_base
-from datetime import datetime
+"""
+Cohort System Models for Journex University
+"""
+
+from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Table, Boolean, JSON
+from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
+from app.db.session import Base
 import uuid
 
-Base = declarative_base()
+# Association table for cohort members
+cohort_members = Table(
+    'cohort_members',
+    Base.metadata,
+    Column('cohort_id', String(36), ForeignKey('cohorts.id')),
+    Column('user_id', Integer, ForeignKey('users.id')),
+    Column('joined_at', DateTime(timezone=True), server_default=func.now()),
+    Column('completed', Boolean, default=False),
+    Column('completed_at', DateTime(timezone=True), nullable=True)
+)
 
 class Cohort(Base):
     __tablename__ = "cohorts"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(String(255), nullable=False)
-    slug = Column(String(255), unique=True, nullable=False)
-    description = Column(Text)
-    instructor_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
-    course_id = Column(UUID(as_uuid=True), ForeignKey("courses.id"))
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(200), nullable=False)
+    description = Column(String(500))
+    start_date = Column(DateTime(timezone=True), nullable=False)
+    end_date = Column(DateTime(timezone=True), nullable=True)
     
-    start_date = Column(DateTime, nullable=False)
-    end_date = Column(DateTime, nullable=False)
-    duration_weeks = Column(Integer)
-    
-    max_students = Column(Integer, default=50)
-    current_students = Column(Integer, default=0)
-    
-    status = Column(String(50), default="upcoming")
+    # Cohort settings
+    max_members = Column(Integer, default=50)
     is_private = Column(Boolean, default=False)
-    invite_code = Column(String(50), unique=True)
+    invite_code = Column(String(50), unique=True, nullable=True)
     
-    requirements = Column(JSON, default={
-        "min_discipline_score": 70,
-        "min_risk_consistency": 65,
-        "max_allowed_violations": 5,
-        "min_lessons_completed": 80,
-        "min_quiz_score": 70
-    })
+    # Leaderboard settings
+    leaderboard_enabled = Column(Boolean, default=True)
+    show_progress = Column(Boolean, default=True)
     
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    members = relationship("User", secondary=cohort_members, backref="cohorts")
+    courses = relationship("CohortCourse", back_populates="cohort", cascade="all, delete-orphan")
+    leaderboard = relationship("CohortLeaderboard", back_populates="cohort", uselist=False)
 
+class CohortCourse(Base):
+    __tablename__ = "cohort_courses"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    cohort_id = Column(String(36), ForeignKey("cohorts.id"))
+    course_id = Column(String(36), ForeignKey("courses.id"))
+    
+    # Course-specific settings
+    required = Column(Boolean, default=True)
+    due_date = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relationships
+    cohort = relationship("Cohort", back_populates="courses")
+    course = relationship("Course")
 
-class CohortMember(Base):
-    __tablename__ = "cohort_members"
+class CohortLeaderboard(Base):
+    __tablename__ = "cohort_leaderboard"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    cohort_id = Column(UUID(as_uuid=True), ForeignKey("cohorts.id", ondelete="CASCADE"))
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"))
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    cohort_id = Column(String(36), ForeignKey("cohorts.id"), unique=True)
     
-    role = Column(String(50), default="student")
-    joined_at = Column(DateTime, default=datetime.utcnow)
+    # Rankings (stored as JSON for performance)
+    rankings = Column(JSON, default=list)
+    last_updated = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
-    lessons_completed = Column(Integer, default=0)
-    lessons_percentage = Column(Float, default=0)
-    average_quiz_score = Column(Float, default=0)
+    # Relationships
+    cohort = relationship("Cohort", back_populates="leaderboard")
     
-    discipline_score = Column(Float, default=0)
-    risk_consistency = Column(Float, default=0)
-    rule_compliance = Column(Float, default=0)
-    
-    total_points = Column(Integer, default=0)
-    rank = Column(Integer, default=0)
-    
-    is_active = Column(Boolean, default=True)
-    dropped_at = Column(DateTime, nullable=True)
-    
-    __table_args__ = (
-        UniqueConstraint('cohort_id', 'user_id', name='unique_cohort_member'),
-    )
-
-
-class CohortMilestone(Base):
-    __tablename__ = "cohort_milestones"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    cohort_id = Column(UUID(as_uuid=True), ForeignKey("cohorts.id", ondelete="CASCADE"))
-    week_number = Column(Integer, nullable=False)
-    
-    title = Column(String(255), nullable=False)
-    description = Column(Text)
-    
-    required_lessons = Column(Integer, default=0)
-    required_quiz_score = Column(Integer, default=70)
-    required_discipline_score = Column(Integer, default=65)
-    required_trades = Column(Integer, default=0)
-    max_allowed_violations = Column(Integer, default=2)
-    
-    reward_points = Column(Integer, default=100)
-    bonus_points = Column(Integer, default=50)
-    
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
-    __table_args__ = (
-        UniqueConstraint('cohort_id', 'week_number', name='unique_cohort_week'),
-    )
-
-
-class MilestoneCompletion(Base):
-    __tablename__ = "milestone_completions"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    milestone_id = Column(UUID(as_uuid=True), ForeignKey("cohort_milestones.id", ondelete="CASCADE"))
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"))
-    
-    completed_at = Column(DateTime, default=datetime.utcnow)
-    achieved_points = Column(Integer, default=0)
-    earned_bonus = Column(Boolean, default=False)
-    
-    metrics_snapshot = Column(JSON)
-    
-    __table_args__ = (
-        UniqueConstraint('milestone_id', 'user_id', name='unique_milestone_user'),
-    )
-
-
-class CohortWeeklySnapshot(Base):
-    __tablename__ = "cohort_weekly_snapshots"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    cohort_id = Column(UUID(as_uuid=True), ForeignKey("cohorts.id", ondelete="CASCADE"))
-    week_number = Column(Integer, nullable=False)
-    snapshot_date = Column(DateTime, default=datetime.utcnow)
-    
-    total_active_students = Column(Integer, default=0)
-    avg_discipline_score = Column(Float, default=0)
-    avg_risk_consistency = Column(Float, default=0)
-    avg_lessons_completed = Column(Float, default=0)
-    dropout_count = Column(Integer, default=0)
-    
-    top_performers = Column(JSON)
-    at_risk_students = Column(JSON)
-    
-    created_at = Column(DateTime, default=datetime.utcnow)
+    def update_rankings(self, db):
+        """Calculate and update rankings based on member progress"""
+        from app.models.university import UserProgress
+        
+        rankings = []
+        for member in self.cohort.members:
+            # Get user's progress across all cohort courses
+            progress = db.query(UserProgress).filter(
+                UserProgress.user_id == member.id,
+                UserProgress.course_id.in_([c.course_id for c in self.cohort.courses])
+            ).all()
+            
+            completed = len([p for p in progress if p.completed])
+            total = len(self.cohort.courses)
+            percentage = (completed / total * 100) if total > 0 else 0
+            
+            rankings.append({
+                "user_id": member.id,
+                "username": member.username,
+                "completed": completed,
+                "total": total,
+                "percentage": round(percentage, 1),
+                "avatar_url": member.avatar_url
+            })
+        
+        # Sort by percentage (highest first)
+        rankings.sort(key=lambda x: x["percentage"], reverse=True)
+        self.rankings = rankings
+        self.last_updated = datetime.utcnow()
+        db.commit()

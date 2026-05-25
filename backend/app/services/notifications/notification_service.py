@@ -180,10 +180,12 @@ class NotificationService:
         if not settings.streak_alerts_enabled:
             return []
         
-        # Get recent trades
+        # Get recent trades (last 30 days)
+        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
         trades = db.query(Trade).filter(
-            Trade.user_id == user_id
-        ).order_by(Trade.exit_time.desc()).limit(20).all()
+            Trade.user_id == user_id,
+            Trade.exit_time >= thirty_days_ago
+        ).order_by(Trade.exit_time.desc()).all()
         
         if len(trades) < settings.streak_threshold:
             return []
@@ -193,20 +195,27 @@ class NotificationService:
         streak_type = None
         notifications = []
         
-        for trade in trades:
+        for i, trade in enumerate(trades):
             is_win = trade.profit_loss and trade.profit_loss > 0
             
-            if streak_type is None:
+            if i == 0:
                 streak_type = "win" if is_win else "loss"
                 current_streak = 1
-            elif (streak_type == "win" and is_win) or (streak_type == "loss" and not is_win):
-                current_streak += 1
             else:
-                break
+                prev_trade = trades[i-1]
+                prev_win = prev_trade.profit_loss and prev_trade.profit_loss > 0
+                
+                if (streak_type == "win" and is_win) or (streak_type == "loss" and not is_win):
+                    current_streak += 1
+                else:
+                    break
+        
+        # Log for debugging
+        logger.info(f"User {user_id}: Current streak: {current_streak} {streak_type}, threshold: {settings.streak_threshold}")
         
         # Check if streak meets threshold
         if current_streak >= settings.streak_threshold:
-            # Check if we already sent a notification for this streak
+            # Check if we already sent a notification for this streak (in last 24 hours)
             recent = db.query(Notification).filter(
                 Notification.user_id == user_id,
                 Notification.type == NotificationType.STREAK_ALERT,
@@ -218,11 +227,12 @@ class NotificationService:
                     user_id=user_id,
                     type=NotificationType.STREAK_ALERT,
                     priority=NotificationPriority.MEDIUM,
-                    title=f"{current_streak}-Trade {streak_type.capitalize()} Streak!",
+                    title=f"🔥 {current_streak}-Trade {streak_type.capitalize()} Streak!",
                     message=f"You're on a {current_streak}-trade {streak_type} streak. Keep it up!",
                     data={"streak": current_streak, "type": streak_type}
                 ))
                 notifications.append(notification)
+                logger.info(f"Created streak notification for user {user_id}")
         
         return notifications
     

@@ -1,65 +1,293 @@
-﻿from fastapi import APIRouter, HTTPException
-from typing import Optional
-from datetime import datetime
+"""
+Courses API Endpoints for Journex University
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from typing import List, Optional
+import logging
+import re
 import uuid
-from app.services.university.database import get_courses_db, get_modules_db, get_lessons_db
 
-router = APIRouter(prefix="/university/courses", tags=["university"])
+from app.db.session import get_db
+from app.api.deps.auth import get_current_user
+from app.models.user import User
+from app.models.university import Course
+from app.schemas.university import CourseCreate, CourseUpdate, CourseResponse
 
-# Get the shared database instances
-courses_db = get_courses_db()
-modules_db = get_modules_db()
-lessons_db = get_lessons_db()
+logger = logging.getLogger(__name__)
 
-@router.get("/")
-async def list_courses(level: Optional[str] = None, tag: Optional[str] = None):
-    """List all courses"""
-    filtered = courses_db.copy()
+# THIS LINE WAS MISSING - ADD IT!
+router = APIRouter(prefix="/courses", tags=["university-courses"])
 
-    if level:
-        filtered = [c for c in filtered if c.get("level") == level]
+@router.get("/", response_model=dict)
+async def get_courses(
+    skip: int = Query(0, description="Number of courses to skip"),
+    limit: int = Query(100, description="Number of courses to return"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    difficulty: Optional[str] = Query(None, description="Filter by difficulty"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all courses"""
+    try:
+        query = db.query(Course)
+        
+        if category:
+            query = query.filter(Course.category == category)
+        if difficulty:
+            query = query.filter(Course.difficulty == difficulty)
+        
+        total = query.count()
+        courses = query.order_by(Course.created_at.desc()).offset(skip).limit(limit).all()
+        
+        # Convert SQLAlchemy models to dict for proper serialization
+        courses_list = []
+        for course in courses:
+            courses_list.append({
+                "id": course.id,
+                "slug": course.slug,
+                "title": course.title,
+                "description": course.description,
+                "category": course.category,
+                "difficulty": course.difficulty,
+                "duration_minutes": course.duration_minutes,
+                "image_url": course.image_url,
+                "pdf_filename": course.pdf_filename,
+                "status": course.status,
+                "learning_objectives": course.learning_objectives,
+                "prerequisites": course.prerequisites,
+                "created_at": course.created_at.isoformat() if course.created_at else None,
+                "updated_at": course.updated_at.isoformat() if course.updated_at else None
+            })
+        
+        return {
+            "courses": courses_list,
+            "total": total
+        }
+    except Exception as e:
+        logger.error(f"Error getting courses: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    if tag:
-        filtered = [c for c in filtered if tag in c.get("tags", [])]
+@router.get("/{course_id}", response_model=dict)
+async def get_course(
+    course_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get a specific course by ID"""
+    try:
+        course = db.query(Course).filter(Course.id == course_id).first()
+        if not course:
+            raise HTTPException(status_code=404, detail="Course not found")
+        
+        # Convert to dict for proper serialization
+        return {
+            "id": course.id,
+            "slug": course.slug,
+            "title": course.title,
+            "description": course.description,
+            "category": course.category,
+            "difficulty": course.difficulty,
+            "duration_minutes": course.duration_minutes,
+            "image_url": course.image_url,
+            "pdf_filename": course.pdf_filename,
+            "status": course.status,
+            "learning_objectives": course.learning_objectives,
+            "prerequisites": course.prerequisites,
+            "created_at": course.created_at.isoformat() if course.created_at else None,
+            "updated_at": course.updated_at.isoformat() if course.updated_at else None
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting course: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    return {"courses": filtered, "total": len(filtered)}
+@router.get("/slug/{slug}", response_model=dict)
+async def get_course_by_slug(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get a specific course by slug"""
+    try:
+        course = db.query(Course).filter(Course.slug == slug).first()
+        if not course:
+            raise HTTPException(status_code=404, detail="Course not found")
+        
+        # Convert to dict for proper serialization
+        return {
+            "id": course.id,
+            "slug": course.slug,
+            "title": course.title,
+            "description": course.description,
+            "category": course.category,
+            "difficulty": course.difficulty,
+            "duration_minutes": course.duration_minutes,
+            "image_url": course.image_url,
+            "pdf_filename": course.pdf_filename,
+            "status": course.status,
+            "learning_objectives": course.learning_objectives,
+            "prerequisites": course.prerequisites,
+            "created_at": course.created_at.isoformat() if course.created_at else None,
+            "updated_at": course.updated_at.isoformat() if course.updated_at else None
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting course by slug: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/{slug}")
-async def get_course(slug: str):
-    course = next((c for c in courses_db if c.get("slug") == slug), None)
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
+@router.post("/", response_model=dict)
+async def create_course(
+    course: CourseCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new course (admin only)"""
+    if current_user.username not in ["testuser", "admin"]:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        # Generate slug from title
+        slug = course.title.lower()
+        slug = re.sub(r'[^\w\s-]', '', slug)
+        slug = re.sub(r'[-\s]+', '-', slug)
+        slug = slug.strip('-')
+        
+        # Check if slug exists
+        existing = db.query(Course).filter(Course.slug == slug).first()
+        if existing:
+            base_slug = slug
+            counter = 1
+            while existing:
+                slug = f"{base_slug}-{counter}"
+                existing = db.query(Course).filter(Course.slug == slug).first()
+                counter += 1
+        
+        # Create course
+        new_course = Course(
+            id=str(uuid.uuid4()),
+            slug=slug,
+            title=course.title,
+            description=course.description,
+            category=course.category,
+            difficulty=course.difficulty,
+            duration_minutes=course.duration_minutes,
+            status="published",
+            pdf_filename=course.pdf_filename,
+            image_url=course.image_url,
+            learning_objectives=course.learning_objectives,
+            prerequisites=course.prerequisites
+        )
+        
+        db.add(new_course)
+        db.commit()
+        db.refresh(new_course)
+        
+        # Return as dict
+        return {
+            "id": new_course.id,
+            "slug": new_course.slug,
+            "title": new_course.title,
+            "description": new_course.description,
+            "category": new_course.category,
+            "difficulty": new_course.difficulty,
+            "duration_minutes": new_course.duration_minutes,
+            "image_url": new_course.image_url,
+            "pdf_filename": new_course.pdf_filename,
+            "status": new_course.status,
+            "learning_objectives": new_course.learning_objectives,
+            "prerequisites": new_course.prerequisites,
+            "created_at": new_course.created_at.isoformat() if new_course.created_at else None,
+            "updated_at": new_course.updated_at.isoformat() if new_course.updated_at else None
+        }
+    except Exception as e:
+        logger.error(f"Error creating course: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
-    course_modules = [m for m in modules_db if m.get("course_id") == course["id"]]
-    course_modules.sort(key=lambda x: x.get("order_index", 0))
+@router.put("/{course_id}", response_model=dict)
+async def update_course(
+    course_id: str,
+    course_update: CourseUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update a course (admin only)"""
+    if current_user.username not in ["testuser", "admin"]:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        course = db.query(Course).filter(Course.id == course_id).first()
+        if not course:
+            raise HTTPException(status_code=404, detail="Course not found")
+        
+        update_data = course_update.model_dump(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(course, field, value)
+        
+        db.commit()
+        db.refresh(course)
+        
+        # Return as dict
+        return {
+            "id": course.id,
+            "slug": course.slug,
+            "title": course.title,
+            "description": course.description,
+            "category": course.category,
+            "difficulty": course.difficulty,
+            "duration_minutes": course.duration_minutes,
+            "image_url": course.image_url,
+            "pdf_filename": course.pdf_filename,
+            "status": course.status,
+            "learning_objectives": course.learning_objectives,
+            "prerequisites": course.prerequisites,
+            "created_at": course.created_at.isoformat() if course.created_at else None,
+            "updated_at": course.updated_at.isoformat() if course.updated_at else None
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating course: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    for module in course_modules:
-        module_lessons = [l for l in lessons_db if l.get("module_id") == module["id"]]
-        module_lessons.sort(key=lambda x: x.get("order_index", 0))
-        module["lessons"] = module_lessons
+@router.delete("/{course_id}")
+async def delete_course(
+    course_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a course (admin only)"""
+    if current_user.username not in ["testuser", "admin"]:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        course = db.query(Course).filter(Course.id == course_id).first()
+        if not course:
+            raise HTTPException(status_code=404, detail="Course not found")
+        
+        db.delete(course)
+        db.commit()
+        return {"message": "Course deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting course: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    course["modules"] = course_modules
-    return course
-
-@router.post("/")
-async def create_course(course_data: dict):
-    course = {
-        "id": str(uuid.uuid4()),
-        "slug": course_data.get("slug") or course_data["title"].lower().replace(" ", "-"),
-        "created_at": datetime.utcnow().isoformat(),
-        "updated_at": datetime.utcnow().isoformat(),
-        "status": "published",
-        **course_data
-    }
-
-    courses_db.append(course)
-    print(f"Course added: {course['title']}. Total courses: {len(courses_db)}")
-    return course
-
-@router.get("/debug/all")
-async def debug_all_courses():
-    """Debug endpoint to see all courses"""
-    return {
-        "courses": courses_db,
-        "count": len(courses_db)
-    }
+@router.get("/categories", response_model=List[str])
+async def get_categories(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all unique course categories"""
+    try:
+        categories = db.query(Course.category).distinct().all()
+        return [c[0] for c in categories if c[0]]
+    except Exception as e:
+        logger.error(f"Error getting categories: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
