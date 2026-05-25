@@ -1,0 +1,779 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import axios from 'axios';
+import {
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area,
+  ComposedChart, Legend, ReferenceLine
+} from 'recharts';
+import Link from 'next/link';
+import BalanceCurve from '@/components/charts/BalanceCurve';
+
+// ============== INTERFACES ==============
+interface CalendarDay {
+  day: number;
+  date: string;
+  pl: number;
+  trades: number;
+  color: string;
+  icons: string[];
+  has_data: boolean;
+}
+
+interface MonthData {
+  year: number;
+  month: number;
+  month_name: string;
+  heatmap: CalendarDay[][];
+  has_data: boolean;
+}
+
+interface CoreMetrics {
+  total_pl: number;
+  net_profit: number;
+  gross_profit: number;
+  gross_loss: number;
+  win_rate: number;
+  profit_factor: number;
+  expectancy: number;
+  avg_r: number;
+  risk_reward: number;
+  total_trades: number;
+  winning_trades: number;
+  losing_trades: number;
+}
+
+interface RiskMetrics {
+  sharpe_ratio: number;
+  sortino_ratio: number;
+  calmar_ratio: number;
+  max_drawdown: number;
+  max_drawdown_pct: number;
+  risk_of_ruin: number;
+  kelly_percentage: number;
+  var_95: number;
+  cvar_95: number;
+  volatility: number;
+  downside_volatility: number;
+}
+
+interface RollingMetrics {
+  dates: string[];
+  rolling_win_rate: number[];
+  rolling_expectancy: number[];
+}
+
+interface TimeAnalysis {
+  avg_trade_duration: number;
+  median_trade_duration: number;
+  max_trade_duration: number;
+  min_trade_duration: number;
+  hourly_performance: Array<{
+    hour: number;
+    trades: number;
+    win_rate: number;
+    pl: number;
+  }>;
+}
+
+interface MaeMfe {
+  mae_distribution: {
+    mean: number;
+    median: number;
+    max: number;
+    histogram: number[];
+  };
+  mfe_distribution: {
+    mean: number;
+    median: number;
+    max: number;
+    histogram: number[];
+  };
+}
+
+interface AnalyticsData {
+  core_metrics: CoreMetrics;
+  risk_metrics: RiskMetrics;
+  rolling_metrics: RollingMetrics;
+  time_analysis: TimeAnalysis;
+  mae_mfe: MaeMfe;
+}
+
+// ============== EQUITY CURVE COMPONENT ==============
+const EquityCurve = ({ data }: { data: any[] }) => {
+  const [showDrawdown, setShowDrawdown] = useState(true);
+  const [timeframe, setTimeframe] = useState('all');
+  const [isClient, setIsClient] = useState(false);
+  
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+  
+  if (!data || data.length === 0) {
+    return (
+      <div className="bg-gray-800 p-6 rounded-lg border border-gray-700 h-80 flex items-center justify-center">
+        <p className="text-gray-400">No equity data available</p>
+      </div>
+    );
+  }
+
+  if (!isClient) {
+    return <div className="bg-gray-800 p-6 rounded-lg border border-gray-700 h-80"></div>;
+  }
+
+  // ... rest of the component
+const EquityCurve = ({ data }: { data: any[] }) => {
+  const [showDrawdown, setShowDrawdown] = useState(true);
+  const [timeframe, setTimeframe] = useState('all');
+  
+  if (!data || data.length === 0) {
+    return (
+      <div className="bg-gray-800 p-6 rounded-lg border border-gray-700 h-80 flex items-center justify-center">
+        <p className="text-gray-400">No equity data available</p>
+      </div>
+    );
+  }
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return `${date.getMonth()+1}/${date.getDate()}`;
+  };
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(value);
+  };
+
+  // Filter data based on timeframe
+  let filteredData = [...data];
+  if (timeframe === '30d' && data.length > 30) {
+    filteredData = data.slice(-30);
+  } else if (timeframe === '90d' && data.length > 90) {
+    filteredData = data.slice(-90);
+  }
+
+  return (
+    <div className="bg-gray-800 p-6 rounded-lg border border-gray-700 mb-8">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-xl font-semibold text-white">Equity Curve</h2>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setTimeframe('all')}
+            className={`px-3 py-1 text-sm rounded ${timeframe === 'all' ? 'bg-blue-600' : 'bg-gray-700'} text-white`}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setTimeframe('90d')}
+            className={`px-3 py-1 text-sm rounded ${timeframe === '90d' ? 'bg-blue-600' : 'bg-gray-700'} text-white`}
+          >
+            90D
+          </button>
+          <button
+            onClick={() => setTimeframe('30d')}
+            className={`px-3 py-1 text-sm rounded ${timeframe === '30d' ? 'bg-blue-600' : 'bg-gray-700'} text-white`}
+          >
+            30D
+          </button>
+          <button
+            onClick={() => setShowDrawdown(!showDrawdown)}
+            className="px-3 py-1 text-sm bg-gray-700 text-white rounded hover:bg-gray-600"
+          >
+            {showDrawdown ? 'Hide Drawdown' : 'Show Drawdown'}
+          </button>
+        </div>
+      </div>
+      
+      <div className="h-80">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={filteredData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+            <XAxis 
+              dataKey="date" 
+              stroke="#9CA3AF"
+              tick={{ fill: '#9CA3AF', fontSize: 12 }}
+              tickFormatter={formatDate}
+            />
+            <YAxis 
+              yAxisId="left"
+              stroke="#9CA3AF"
+              tick={{ fill: '#9CA3AF', fontSize: 12 }}
+              tickFormatter={formatCurrency}
+              domain={['auto', 'auto']}
+            />
+            {showDrawdown && (
+              <YAxis 
+                yAxisId="right"
+                orientation="right"
+                stroke="#EF4444"
+                tick={{ fill: '#EF4444', fontSize: 12 }}
+                tickFormatter={(value) => `${value.toFixed(0)}%`}
+                domain={[-100, 0]}
+              />
+            )}
+            
+            <Tooltip
+              contentStyle={{ backgroundColor: '#1F2937', border: 'none', borderRadius: '0.5rem' }}
+              labelStyle={{ color: '#9CA3AF' }}
+              formatter={(value: number, name: string) => {
+                if (name === 'drawdown') return [`${value.toFixed(1)}%`, 'Drawdown'];
+                if (name === 'equity') return [formatCurrency(value), 'Equity'];
+                if (name === 'peak') return [formatCurrency(value), 'Peak'];
+                return [value, name];
+              }}
+              labelFormatter={(label) => new Date(label).toLocaleDateString()}
+            />
+            
+            <Legend />
+            
+            <Area
+              yAxisId="left"
+              type="monotone"
+              dataKey="equity"
+              name="Equity"
+              stroke="#3B82F6"
+              fill="#3B82F6"
+              fillOpacity={0.2}
+              strokeWidth={2}
+            />
+            
+            <Line
+              yAxisId="left"
+              type="monotone"
+              dataKey="peak"
+              name="Peak"
+              stroke="#10B981"
+              strokeDasharray="5 5"
+              dot={false}
+              strokeWidth={1}
+            />
+            
+            {showDrawdown && (
+              <Area
+                yAxisId="right"
+                type="monotone"
+                dataKey="drawdown_pct"
+                name="drawdown"
+                stroke="#EF4444"
+                fill="#EF4444"
+                fillOpacity={0.1}
+                strokeWidth={1}
+              />
+            )}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+};
+
+// ============== MAIN DASHBOARD COMPONENT ==============
+export default function DashboardPage() {
+const [currentDate, setCurrentDate] = useState(new Date(2026, 0, 1)); // January 1, 2026 
+const [monthData, setMonthData] = useState<MonthData | null>(null);
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
+  const [equityData, setEquityData] = useState<any[]>([]);
+  const [balanceData, setBalanceData] = useState<any>(null);
+  const [balanceInterval, setBalanceInterval] = useState('daily');
+  const [loading, setLoading] = useState(true);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [dayTrades, setDayTrades] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'overview' | 'calendar' | 'risk' | 'time'>('overview');
+
+  useEffect(() => {
+    fetchData();
+  }, [currentDate, balanceInterval]);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      // Fetch calendar data
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth() + 1;
+      const calendarUrl = `http://localhost:8000/api/v1/advanced-analytics/calendar/${year}/${month}?user_id=1`;
+      const calendarResponse = await axios.get(calendarUrl);
+      setMonthData({
+        year,
+        month,
+        month_name: currentDate.toLocaleString('default', { month: 'long' }),
+        heatmap: calendarResponse.data.heatmap,
+        has_data: true
+      });
+
+      // Fetch advanced analytics
+      const analyticsResponse = await axios.get('http://localhost:8000/api/v1/advanced-analytics/dashboard?user_id=1');
+      setAnalytics(analyticsResponse.data);
+
+      // Fetch equity curve data
+      try {
+        const equityResponse = await axios.get('http://localhost:8000/api/v1/advanced-analytics/charts/equity_curve?user_id=1');
+        setEquityData(equityResponse.data);
+      } catch (error) {
+        console.error('Error fetching equity curve:', error);
+      }
+
+      // Fetch balance curve data
+      try {
+        const balanceResponse = await axios.get(`http://localhost:8000/api/v1/balance/curve?user_id=1&interval=${balanceInterval}`);
+        setBalanceData(balanceResponse.data);
+      } catch (error) {
+        console.error('Error fetching balance curve:', error);
+      }
+
+      // Fetch trades for day details
+      const tradesResponse = await axios.get('http://localhost:8000/api/v1/trades/');
+      setDayTrades(tradesResponse.data);
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const changeMonth = (delta: number) => {
+    const newDate = new Date(currentDate);
+    newDate.setMonth(newDate.getMonth() + delta);
+    setCurrentDate(newDate);
+    setSelectedDay(null);
+  };
+
+  const handleDayClick = (date: string) => {
+    setSelectedDay(date);
+  };
+
+  const getDayTrades = (date: string) => {
+    return dayTrades.filter(trade => {
+      if (!trade.exit_time) return false;
+      return trade.exit_time.split('T')[0] === date;
+    });
+  };
+
+  const formatCurrency = (value: number) => {
+    if (Math.abs(value) < 0.01) {
+      return `$${(value * 100000).toFixed(0)}`;
+    }
+    if (Math.abs(value) < 1) {
+      return `$${(value * 1000).toFixed(1)}`;
+    }
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(value);
+  };
+
+  const formatPercent = (value: number) => {
+    return `${(value || 0).toFixed(1)}%`;
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-white text-xl">Loading dashboard...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-900 p-8">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+          <h1 className="text-4xl font-bold text-white">Trading Dashboard</h1>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`px-4 py-2 rounded ${activeTab === 'overview' ? 'bg-blue-600' : 'bg-gray-700'} text-white`}
+            >
+              Overview
+            </button>
+            <button
+              onClick={() => setActiveTab('calendar')}
+              className={`px-4 py-2 rounded ${activeTab === 'calendar' ? 'bg-blue-600' : 'bg-gray-700'} text-white`}
+            >
+              Calendar
+            </button>
+            <button
+              onClick={() => setActiveTab('risk')}
+              className={`px-4 py-2 rounded ${activeTab === 'risk' ? 'bg-blue-600' : 'bg-gray-700'} text-white`}
+            >
+              Risk
+            </button>
+            <button
+              onClick={() => setActiveTab('time')}
+              className={`px-4 py-2 rounded ${activeTab === 'time' ? 'bg-blue-600' : 'bg-gray-700'} text-white`}
+            >
+              Time Analysis
+            </button>
+            <Link href="/" className="bg-gray-700 text-white px-4 py-2 rounded hover:bg-gray-600">
+              Home
+            </Link>
+          </div>
+        </div>
+
+        {/* Equity Curve - Primary Visual Focus */}
+        <EquityCurve data={equityData} />
+
+        {/* Balance Curve */}
+        {balanceData && (
+          <BalanceCurve
+            data={balanceData.data}
+            totalDeposits={balanceData.total_deposits}
+            totalWithdrawals={balanceData.total_withdrawals}
+            totalTradingPL={balanceData.total_trading_pl}
+            finalBalance={balanceData.final_balance}
+            interval={balanceInterval}
+            onIntervalChange={setBalanceInterval}
+          />
+        )}
+
+        {/* Calendar Tab */}
+        {activeTab === 'calendar' && (
+          <div className="space-y-6">
+            {/* Month Navigation */}
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+              <button
+                onClick={() => changeMonth(-1)}
+                className="bg-gray-800 text-white px-4 py-2 rounded hover:bg-gray-700 transition w-full sm:w-auto"
+              >
+                ← Previous Month
+              </button>
+              <h2 className="text-2xl font-semibold text-white">
+                {monthData?.month_name} {monthData?.year}
+              </h2>
+              <button
+                onClick={() => changeMonth(1)}
+                className="bg-gray-800 text-white px-4 py-2 rounded hover:bg-gray-700 transition w-full sm:w-auto"
+              >
+                Next Month →
+              </button>
+            </div>
+
+            {/* Calendar Grid */}
+            <div className="bg-gray-800 rounded-lg p-4 md:p-6 border border-gray-700 overflow-x-auto">
+              <div className="grid grid-cols-7 gap-1 md:gap-2 mb-2 min-w-[500px]">
+                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
+                  <div key={day} className="text-center text-gray-400 font-medium text-sm md:text-base">{day}</div>
+                ))}
+              </div>
+
+              <div className="space-y-1 md:space-y-2 min-w-[500px]">
+                {monthData?.heatmap.map((week, weekIndex) => (
+                  <div key={weekIndex} className="grid grid-cols-7 gap-1 md:gap-2">
+                    {week.map((day, dayIndex) => (
+                      <div key={dayIndex}>
+                        {day.empty ? (
+                          <div className="aspect-square bg-gray-900 rounded opacity-50"></div>
+                        ) : (
+                          <button
+                            onClick={() => day.has_data && handleDayClick(day.date)}
+                            className={`w-full aspect-square ${day.color || 'bg-gray-700'} rounded p-1 hover:ring-2 hover:ring-blue-500 transition-all ${selectedDay === day.date ? 'ring-2 ring-blue-500' : ''}`}
+                          >
+                            <div className="flex flex-col h-full">
+                              <span className="text-white text-xs md:text-sm font-medium">{day.day}</span>
+                              {day.has_data && (
+                                <>
+                                  <span className={`text-[10px] md:text-xs font-bold ${day.pl > 0 ? 'text-green-200' : 'text-red-200'}`}>
+                                    {formatCurrency(day.pl)}
+                                  </span>
+                                  <div className="flex justify-center gap-0.5 mt-auto">
+                                    {day.icons?.map((icon, i) => (
+                                      <span key={i} className="text-[8px] md:text-xs">{icon}</span>
+                                    ))}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap gap-4 mt-6 pt-4 border-t border-gray-700">
+                <LegendItem color="bg-green-700" label="High Profit" />
+                <LegendItem color="bg-green-600" label="Medium Profit" />
+                <LegendItem color="bg-green-500" label="Low Profit" />
+                <LegendItem color="bg-gray-700" label="No Trades" />
+                <LegendItem color="bg-red-500" label="Low Loss" />
+                <LegendItem color="bg-red-600" label="Medium Loss" />
+                <LegendItem color="bg-red-700" label="High Loss" />
+              </div>
+            </div>
+
+            {/* Day Details Panel */}
+            {selectedDay && (
+              <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-semibold text-white">
+                    {new Date(selectedDay).toLocaleDateString('en-US', { 
+                      weekday: 'long', 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    })}
+                  </h3>
+                  <button
+                    onClick={() => setSelectedDay(null)}
+                    className="text-gray-400 hover:text-white text-2xl"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {getDayTrades(selectedDay).length > 0 ? (
+                    getDayTrades(selectedDay).map(trade => (
+                      <div key={trade.id} className="bg-gray-700 p-4 rounded-lg hover:bg-gray-650 transition">
+                        <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-white font-medium">{trade.symbol}</span>
+                              <span className={`px-2 py-1 text-xs rounded ${
+                                trade.direction === 'long' ? 'bg-green-600' : 'bg-red-600'
+                              }`}>
+                                {trade.direction}
+                              </span>
+                              {trade.strategy && (
+                                <span className="text-xs bg-blue-900 text-blue-300 px-2 py-1 rounded">
+                                  {trade.strategy}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-sm text-gray-400 mt-2">
+                              Entry: ${trade.entry_price} | Exit: ${trade.exit_price} | Lot: {trade.lot_size}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className={`text-xl font-bold ${trade.profit_loss >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {formatCurrency(trade.profit_loss)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-gray-400 text-center py-8">No trades on this day</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Overview Tab */}
+        {activeTab === 'overview' && analytics && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <MetricCard
+                title="Total P/L"
+                value={formatCurrency(analytics.core_metrics?.total_pl || 0)}
+                subValue={`${analytics.core_metrics?.winning_trades || 0}W / ${analytics.core_metrics?.losing_trades || 0}L`}
+                icon="💰"
+              />
+              <MetricCard
+                title="Win Rate"
+                value={formatPercent(analytics.core_metrics?.win_rate || 0)}
+                subValue={`Profit Factor: ${(analytics.core_metrics?.profit_factor || 0).toFixed(2)}`}
+                icon="🎯"
+              />
+              <MetricCard
+                title="Expectancy"
+                value={formatCurrency(analytics.core_metrics?.expectancy || 0)}
+                subValue={`Avg R: ${(analytics.core_metrics?.avg_r || 0).toFixed(2)}`}
+                icon="⚡"
+              />
+              <MetricCard
+                title="Risk/Reward"
+                value={(analytics.core_metrics?.risk_reward || 0).toFixed(2)}
+                icon="📊"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <MetricCard
+                title="Max Drawdown"
+                value={formatCurrency(analytics.risk_metrics?.max_drawdown || 0)}
+                subValue={`${(analytics.risk_metrics?.max_drawdown_pct || 0).toFixed(1)}%`}
+                icon="📉"
+              />
+              <MetricCard
+                title="Sharpe Ratio"
+                value={(analytics.risk_metrics?.sharpe_ratio || 0).toFixed(2)}
+                subValue={`Sortino: ${(analytics.risk_metrics?.sortino_ratio || 0).toFixed(2)}`}
+                icon="📈"
+              />
+              <MetricCard
+                title="Calmar Ratio"
+                value={(analytics.risk_metrics?.calmar_ratio || 0).toFixed(2)}
+                icon="📊"
+              />
+              <MetricCard
+                title="Risk of Ruin"
+                value={`${((analytics.risk_metrics?.risk_of_ruin || 0) * 100).toFixed(1)}%`}
+                icon="⚠️"
+              />
+            </div>
+
+            <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
+              <h2 className="text-xl font-semibold text-white mb-4">Performance Summary</h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <StatBox label="Gross Profit" value={formatCurrency(analytics.core_metrics?.gross_profit || 0)} color="text-green-400" />
+                <StatBox label="Gross Loss" value={formatCurrency(analytics.core_metrics?.gross_loss || 0)} color="text-red-400" />
+                <StatBox label="Total Trades" value={analytics.core_metrics?.total_trades || 0} />
+                <StatBox label="Avg Trade Duration" value={`${Math.round(analytics.time_analysis?.avg_trade_duration || 0)} min`} />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Risk Tab */}
+        {activeTab === 'risk' && analytics && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <MetricCard
+                title="Sharpe Ratio"
+                value={(analytics.risk_metrics?.sharpe_ratio || 0).toFixed(2)}
+                icon="📊"
+              />
+              <MetricCard
+                title="Sortino Ratio"
+                value={(analytics.risk_metrics?.sortino_ratio || 0).toFixed(2)}
+                icon="🎯"
+              />
+              <MetricCard
+                title="Calmar Ratio"
+                value={(analytics.risk_metrics?.calmar_ratio || 0).toFixed(2)}
+                icon="📈"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <MetricCard
+                title="Max Drawdown"
+                value={formatCurrency(analytics.risk_metrics?.max_drawdown || 0)}
+                subValue={`${(analytics.risk_metrics?.max_drawdown_pct || 0).toFixed(1)}%`}
+                icon="📉"
+              />
+              <MetricCard
+                title="Value at Risk (95%)"
+                value={formatCurrency(analytics.risk_metrics?.var_95 || 0)}
+                subValue={`CVaR: ${formatCurrency(analytics.risk_metrics?.cvar_95 || 0)}`}
+                icon="⚠️"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <MetricCard
+                title="Volatility"
+                value={`${(analytics.risk_metrics?.volatility || 0).toFixed(2)}%`}
+                icon="📊"
+              />
+              <MetricCard
+                title="Downside Volatility"
+                value={`${(analytics.risk_metrics?.downside_volatility || 0).toFixed(2)}%`}
+                icon="📉"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <MetricCard
+                title="Kelly %"
+                value={`${((analytics.risk_metrics?.kelly_percentage || 0) * 100).toFixed(1)}%`}
+                icon="📈"
+              />
+              <MetricCard
+                title="Risk of Ruin"
+                value={`${((analytics.risk_metrics?.risk_of_ruin || 0) * 100).toFixed(1)}%`}
+                icon="⚠️"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Time Analysis Tab */}
+        {activeTab === 'time' && analytics && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <MetricCard
+                title="Avg Duration"
+                value={`${Math.round(analytics.time_analysis?.avg_trade_duration || 0)} min`}
+                icon="⏱️"
+              />
+              <MetricCard
+                title="Median Duration"
+                value={`${Math.round(analytics.time_analysis?.median_trade_duration || 0)} min`}
+                icon="⏲️"
+              />
+              <MetricCard
+                title="Max Duration"
+                value={`${Math.round(analytics.time_analysis?.max_trade_duration || 0)} min`}
+                icon="⌛"
+              />
+              <MetricCard
+                title="Min Duration"
+                value={`${Math.round(analytics.time_analysis?.min_trade_duration || 0)} min`}
+                icon="⏱️"
+              />
+            </div>
+
+            <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
+              <h2 className="text-xl font-semibold text-white mb-4">Hourly Performance</h2>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={analytics.time_analysis?.hourly_performance || []}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis dataKey="hour" stroke="#9CA3AF" />
+                    <YAxis yAxisId="left" stroke="#9CA3AF" />
+                    <YAxis yAxisId="right" orientation="right" stroke="#9CA3AF" />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1F2937', border: 'none' }}
+                      labelStyle={{ color: '#9CA3AF' }}
+                    />
+                    <Legend />
+                    <Bar yAxisId="left" dataKey="trades" name="Trades" fill="#3B82F6" />
+                    <Line yAxisId="right" type="monotone" dataKey="win_rate" name="Win Rate %" stroke="#10B981" />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============== HELPER COMPONENTS ==============
+const MetricCard = ({ title, value, subValue, icon }: any) => (
+  <div className="bg-gray-800 p-6 rounded-lg border border-gray-700 hover:border-blue-500 transition">
+    <div className="flex justify-between items-start mb-2">
+      <p className="text-gray-400 text-sm">{title}</p>
+      <span className="text-2xl">{icon}</span>
+    </div>
+    <p className="text-2xl font-bold text-white">{value || '0'}</p>
+    {subValue && <p className="text-gray-500 text-sm mt-1">{subValue}</p>}
+  </div>
+);
+
+const StatBox = ({ label, value, color = 'text-white' }: any) => (
+  <div className="bg-gray-700 p-4 rounded">
+    <p className="text-gray-400 text-sm">{label}</p>
+    <p className={`text-xl font-bold ${color}`}>{value}</p>
+  </div>
+);
+
+const LegendItem = ({ color, label }: any) => (
+  <div className="flex items-center">
+    <div className={`w-4 h-4 ${color} rounded mr-2`}></div>
+    <span className="text-gray-300 text-sm">{label}</span>
+  </div>
+);
