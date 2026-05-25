@@ -1,4 +1,4 @@
-﻿# Python
+# Python
 __pycache__/
 *.py[cod]
 *.class
@@ -12,9 +12,6 @@ venv.bak/
 pythonenv.*
 
 # Backend
-backend/venv/
-backend/__pycache__/
-backend/*.pyc
 backend/.env
 backend/.env.local
 backend/.env.*.local
@@ -23,13 +20,12 @@ backend/.env.*.local
 frontend/node_modules/
 frontend/.next/
 frontend/out/
-frontend/build
-frontend/dist
+frontend/build/
+frontend/dist/
 frontend/.env
 frontend/.env.local
 frontend/.env.*.local
 frontend/*.log
-frontend/next-env.d.ts
 
 # Docker
 *.pid
@@ -58,5 +54,3 @@ yarn-error.log*
 # Testing
 coverage/
 .nyc_output/
-frontend/venv/
-frontend/venv/
