@@ -58,3 +58,5 @@ yarn-error.log*
 # Testing
 coverage/
 .nyc_output/
+frontend/venv/
+frontend/venv/
